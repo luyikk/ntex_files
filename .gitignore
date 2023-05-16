@@ -1,1 +1,6 @@
 /target
+/.idea/.gitignore
+/.idea/modules.xml
+/.idea/ntex_files.iml
+/.idea/vcs.xml
+/Cargo.lock
