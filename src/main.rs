@@ -1,9 +1,10 @@
 use anyhow::Result;
-use ntex::web::{self, Error, get};
+use ntex::web::{self,  Error, get};
 use ntex_files as fs;
 use ntex_session::{CookieSession, Session};
 use ntex_identity::{Identity, CookieIdentityPolicy, IdentityService};
 use time::Duration;
+
 
 async fn index(session: Session,id: Identity) -> Result<String, Error> {
     // access session data
