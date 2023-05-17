@@ -1,8 +1,10 @@
 use anyhow::Result;
-use ntex::web::{self,  Error, get};
+use ntex::{Middleware, Service};
+use ntex::util::BoxFuture;
+use ntex::web::{self, Error, ErrorRenderer, get, WebRequest, WebResponse};
 use ntex_files as fs;
 use ntex_session::{CookieSession, Session};
-use ntex_identity::{Identity, CookieIdentityPolicy, IdentityService};
+use ntex_identity::{Identity, CookieIdentityPolicy, IdentityService, RequestIdentity};
 use time::Duration;
 
 
@@ -41,6 +43,7 @@ async fn main()->Result<()> {
     env_logger::builder().filter_level(log::LevelFilter::Debug).init();
     web::HttpServer::new(|| {
         web::App::new()
+            .wrap(IdentityCheckService)
             .wrap(CookieSession::signed(&[1; 32]) // <- create cookie based session middleware
                 .name("session")
                 .path("/")
@@ -64,4 +67,50 @@ async fn main()->Result<()> {
     .run()
     .await?;
     Ok(())
+}
+
+
+pub struct IdentityCheckService;
+
+impl<S> Middleware<S> for IdentityCheckService{
+    type Service = IdentityCheck<S>;
+
+    #[inline]
+    fn create(&self, service: S) -> Self::Service {
+        IdentityCheck{ service}
+    }
+}
+
+pub struct IdentityCheck<S>{
+    service:S
+}
+
+impl<S, E> Service<WebRequest<E>> for IdentityCheck<S>
+    where
+        S: Service<WebRequest<E>, Response = WebResponse, Error = web::Error>,
+        E: ErrorRenderer,
+{
+    type Response = WebResponse;
+    type Error = S::Error;
+    type Future<'f> = BoxFuture<'f, Result<Self::Response, Self::Error>> where Self: 'f;
+
+    ntex::forward_poll_ready!(service);
+
+    #[inline]
+    fn call(&self, req: WebRequest<E>) -> Self::Future<'_> {
+        Box::pin(async move {
+            if req.path().starts_with("/static") {
+                if let Some(id) = req.get_identity() {
+                    log::debug!("{}",id);
+                    self.service.call(req).await
+                } else {
+                    Ok(req.into_response(web::HttpResponse::NotFound().finish().into_body()))
+                }
+            }else{
+                self.service.call(req).await
+            }
+
+        })
+    }
+
 }
