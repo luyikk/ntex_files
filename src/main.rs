@@ -89,7 +89,7 @@ pub struct StaticFileIdentityCheck<S> {
 
 impl<S, E> Service<WebRequest<E>> for StaticFileIdentityCheck<S>
 where
-    S: Service<WebRequest<E>, Response = WebResponse, Error = web::Error> + 'static,
+    S: Service<WebRequest<E>, Response = WebResponse, Error = Error> + 'static,
     E: ErrorRenderer,
 {
     type Response = WebResponse;
