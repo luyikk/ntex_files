@@ -1,3 +1,5 @@
+mod websocket;
+
 use anyhow::Result;
 use futures::future::LocalBoxFuture;
 use futures::FutureExt;
@@ -6,7 +8,6 @@ use ntex::{Middleware, Service};
 use ntex_files as fs;
 use ntex_identity::{CookieIdentityPolicy, Identity, IdentityService, RequestIdentity};
 use ntex_session::{CookieSession, Session};
-use time::Duration;
 
 async fn index(session: Session, id: Identity) -> Result<String, Error> {
     // access session data
@@ -45,6 +46,7 @@ async fn main() -> Result<()> {
         .init();
     web::HttpServer::new(|| {
         web::App::new()
+            .wrap(web::middleware::Logger::default())
             .wrap(StaticFileIdentityCheckService)
             .wrap(
                 CookieSession::signed(&[1; 32]) // <- create cookie based session middleware
@@ -58,11 +60,12 @@ async fn main() -> Result<()> {
                 CookieIdentityPolicy::new(&[10; 32]) // <- create cookie identity policy
                     .name("auth-cookie")
                     .secure(false)
-                    .visit_deadline(Duration::days(1)),
+                    .visit_deadline(time::Duration::days(1)),
             ))
             .service(fs::Files::new("/static", ".").show_files_listing())
             .service(web::resource("/").to(index))
             .service(web::resource("/login").to(login))
+            .service(web::resource("/ws").to(websocket::ws_index))
             .service(logout)
     })
     .bind(("0.0.0.0", 80))?
@@ -106,7 +109,11 @@ where
                     log::debug!("{}", id);
                     self.service.call(req).await
                 } else {
-                    Ok(req.into_response(web::HttpResponse::NotFound()))
+                    Ok(req.into_response(
+                        web::HttpResponse::MovedPermanently()
+                            .set_header("Location", "/")
+                            .finish(),
+                    ))
                 }
             } else {
                 self.service.call(req).await
