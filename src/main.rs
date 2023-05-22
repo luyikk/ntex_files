@@ -3,6 +3,7 @@ mod websocket;
 use anyhow::Result;
 use futures::future::LocalBoxFuture;
 use futures::FutureExt;
+use ntex::http::header::ContentEncoding;
 use ntex::web::{self, get, Error, ErrorRenderer, WebRequest, WebResponse};
 use ntex::{Middleware, Service};
 use ntex_files as fs;
@@ -48,6 +49,7 @@ async fn main() -> Result<()> {
         web::App::new()
             .wrap(web::middleware::Logger::default())
             .wrap(StaticFileIdentityCheckService)
+            .wrap(web::middleware::Compress::new(ContentEncoding::Auto))
             .wrap(
                 CookieSession::signed(&[1; 32]) // <- create cookie based session middleware
                     .name("session")
