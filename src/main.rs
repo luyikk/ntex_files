@@ -1,9 +1,9 @@
 mod websocket;
 
 use anyhow::Result;
-use clia_ntex_files as fs;
-use clia_ntex_identity::{CookieIdentityPolicy, Identity, IdentityService, RequestIdentity};
-use clia_ntex_session::{CookieSession, Session};
+use ntex_files as fs;
+use ntex_identity::{CookieIdentityPolicy, Identity, IdentityService, RequestIdentity};
+use ntex_session::{CookieSession, Session};
 use futures::future::LocalBoxFuture;
 use futures::FutureExt;
 use ntex::http::header::ContentEncoding;

@@ -1,4 +1,4 @@
-use clia_ntex_identity::RequestIdentity;
+use ntex_identity::RequestIdentity;
 use futures::channel::oneshot;
 use futures::future::{select, Either};
 use ntex::service::{fn_factory_with_config, fn_shutdown};
