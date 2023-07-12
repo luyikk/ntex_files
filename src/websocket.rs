@@ -1,11 +1,13 @@
+use clia_ntex_identity::RequestIdentity;
 use futures::channel::oneshot;
 use futures::future::{select, Either};
 use ntex::service::{fn_factory_with_config, fn_shutdown};
 use ntex::time::sleep;
 use ntex::util::Bytes;
-use ntex::web::{ws, Error};
-use ntex::{fn_service, pipeline, rt, web, Service};
-use ntex_identity::RequestIdentity;
+use ntex::web::{types, ws, Error};
+use ntex::{chain, fn_service, rt, web, Service};
+use serde::Deserialize;
+use serde_json::json;
 use std::cell::RefCell;
 use std::future::ready;
 use std::io;
@@ -23,9 +25,12 @@ struct WsState {
     hb: Instant,
 }
 
+
 /// WebSockets service factory
 async fn ws_service(
     sink: ws::WsSink,
+    user_id: String,
+    server_id: i32,
 ) -> Result<impl Service<ws::Frame, Response = Option<ws::Message>, Error = io::Error>, Error> {
     let state = Rc::new(RefCell::new(WsState { hb: Instant::now() }));
 
@@ -33,7 +38,7 @@ async fn ws_service(
     let (tx, rx) = oneshot::channel();
 
     // start heartbeat task
-    rt::spawn(heartbeat(state.clone(), sink, rx));
+    rt::spawn(heartbeat(state.clone(), sink.clone(), rx));
 
     // handler service for incoming websockets frames
     let service = fn_service(move |frame| {
@@ -45,6 +50,7 @@ async fn ws_service(
             }
             // update heartbeat
             ws::Frame::Pong(_) => {
+                log::debug!("read user:{} pong", user_id);
                 state.borrow_mut().hb = Instant::now();
                 None
             }
@@ -67,7 +73,7 @@ async fn ws_service(
     });
 
     // pipe our service with on_shutdown callback
-    Ok(pipeline(service).and_then(on_shutdown))
+    Ok(chain(service).and_then(on_shutdown))
 }
 
 /// helper method that sends ping to client every heartbeat interval
@@ -99,13 +105,29 @@ async fn heartbeat(state: Rc<RefCell<WsState>>, sink: ws::WsSink, mut rx: onesho
     }
 }
 
+#[derive(Deserialize)]
+pub struct WebSocketArgs {
+    pub server_id: i32,
+}
+
 /// do websocket handshake and start web sockets service
-pub async fn ws_index(req: web::HttpRequest) -> Result<web::HttpResponse, Error> {
-    if req.get_identity().is_some() {
-        ws::start(req, fn_factory_with_config(ws_service)).await
+pub async fn ws_index(
+    req: web::HttpRequest,
+    args: types::Path<WebSocketArgs>,
+) -> Result<web::HttpResponse, Error> {
+    let server_id = args.server_id;
+    if let Some(user_id) = req.get_identity() {
+        log::info!("user id:{} server id:{}", user_id, server_id);
+        ws::start(
+            req,
+            fn_factory_with_config(move |sink| {
+                let user_id = user_id.clone();
+                async move { ws_service(sink, user_id, server_id).await }
+            }),
+        )
+        .await
     } else {
-        Ok(web::HttpResponse::MovedPermanently()
-            .set_header("Location", "/")
-            .finish())
+        println!("not login");
+        Ok(web::HttpResponse::BadRequest().json(&json!({"error":"session error"})))
     }
 }

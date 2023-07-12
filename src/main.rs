@@ -1,14 +1,14 @@
 mod websocket;
 
 use anyhow::Result;
+use clia_ntex_files as fs;
+use clia_ntex_identity::{CookieIdentityPolicy, Identity, IdentityService, RequestIdentity};
+use clia_ntex_session::{CookieSession, Session};
 use futures::future::LocalBoxFuture;
 use futures::FutureExt;
 use ntex::http::header::ContentEncoding;
 use ntex::web::{self, get, Error, ErrorRenderer, WebRequest, WebResponse};
-use ntex::{Middleware, Service};
-use ntex_files as fs;
-use ntex_identity::{CookieIdentityPolicy, Identity, IdentityService, RequestIdentity};
-use ntex_session::{CookieSession, Session};
+use ntex::{Middleware, Service, ServiceCtx};
 use rand::RngCore;
 
 async fn index(session: Session, id: Identity) -> Result<String, Error> {
@@ -46,7 +46,7 @@ async fn main() -> Result<()> {
     env_logger::builder()
         .filter_level(log::LevelFilter::Debug)
         .init();
-    let mut key=[0;32];
+    let mut key = [0; 32];
     rand::thread_rng().fill_bytes(&mut key);
     web::HttpServer::new(move || {
         web::App::new()
@@ -70,7 +70,7 @@ async fn main() -> Result<()> {
             .service(fs::Files::new("/static", ".").show_files_listing())
             .service(web::resource("/").to(index))
             .service(web::resource("/login").to(login))
-            .service(web::resource("/ws").to(websocket::ws_index))
+            .service(web::resource("/wss/{server_id}").to(websocket::ws_index))
             .service(logout)
     })
     .bind(("0.0.0.0", 80))?
@@ -107,21 +107,22 @@ where
     ntex::forward_poll_ready!(service);
 
     #[inline]
-    fn call(&self, req: WebRequest<E>) -> Self::Future<'_> {
+    fn call<'a>(&'a self, req: web::WebRequest<E>, ctx: ServiceCtx<'a, Self>) -> Self::Future<'_> {
         Box::pin(async move {
+            println!("{}", req.path());
             if req.path().starts_with("/static") {
                 if let Some(id) = req.get_identity() {
                     log::debug!("{}", id);
-                    self.service.call(req).await
+                    ctx.call(&self.service, req).await
                 } else {
                     Ok(req.into_response(
-                        web::HttpResponse::MovedPermanently()
+                        web::HttpResponse::TemporaryRedirect()
                             .set_header("Location", "/")
                             .finish(),
                     ))
                 }
             } else {
-                self.service.call(req).await
+                ctx.call(&self.service, req).await
             }
         })
         .boxed_local()
