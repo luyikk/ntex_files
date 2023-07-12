@@ -9,6 +9,7 @@ use ntex::{Middleware, Service};
 use ntex_files as fs;
 use ntex_identity::{CookieIdentityPolicy, Identity, IdentityService, RequestIdentity};
 use ntex_session::{CookieSession, Session};
+use rand::RngCore;
 
 async fn index(session: Session, id: Identity) -> Result<String, Error> {
     // access session data
@@ -45,7 +46,9 @@ async fn main() -> Result<()> {
     env_logger::builder()
         .filter_level(log::LevelFilter::Debug)
         .init();
-    web::HttpServer::new(|| {
+    let mut key=[0;32];
+    rand::thread_rng().fill_bytes(&mut key);
+    web::HttpServer::new(move || {
         web::App::new()
             .wrap(web::middleware::Logger::default())
             .wrap(StaticFileIdentityCheckService)
@@ -59,7 +62,7 @@ async fn main() -> Result<()> {
             )
             .wrap(IdentityService::new(
                 // <- create identity middleware
-                CookieIdentityPolicy::new(&[10; 32]) // <- create cookie identity policy
+                CookieIdentityPolicy::new(&key) // <- create cookie identity policy
                     .name("auth-cookie")
                     .secure(false)
                     .visit_deadline(time::Duration::days(1)),
